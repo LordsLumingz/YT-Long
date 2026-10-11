@@ -1,0 +1,12 @@
+# secrets: never commit
+token.json
+client_secret*.json
+
+# local run state (your video IDs and titles)
+titles.csv
+done.json
+
+# python
+__pycache__/
+*.pyc
+.venv/
