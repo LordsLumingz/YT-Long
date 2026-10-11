@@ -5,7 +5,7 @@
   python yt_batch.py apply --limit 1        # test on a single video
   python yt_batch.py apply                  # do all of them
 
-Description = original filename (IMG_3898) on line 1, then the shared line.
+Description = original filename without extension on line 1, then --line if given.
 Title       = 'title' column from titles.csv, or '<prefix> #N' when left blank.
 """
 import argparse
@@ -21,6 +21,8 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+__version__ = "0.2.5"
 
 HERE = Path(__file__).resolve().parent
 SCOPES = ["https://www.googleapis.com/auth/youtube.force-ssl"]
@@ -63,6 +65,14 @@ def natural(s):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", s)]
 
 
+def untitled(filename, current_title):
+    """True while the title is still the one Studio derived from the filename
+    (IMG_3976(1).MOV -> 'IMG 39761'), i.e. nobody has titled the video yet."""
+    def norm(t):
+        return re.sub(r"[\W_]+", "", t.lower())
+    return norm(current_title) == norm(Path(filename).stem)
+
+
 def list_videos(yt, pattern, any_visibility, deep):
     uploads = yt.channels().list(part="contentDetails", mine=True).execute()
     uploads = uploads["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
@@ -95,7 +105,7 @@ def list_videos(yt, pattern, any_visibility, deep):
     keep = []
     for v in videos:
         name = v.get("fileDetails", {}).get("fileName", "")
-        if not re.search(pattern, name):
+        if not name or not re.search(pattern, name):
             continue
         if not any_visibility and v["status"]["privacyStatus"] != "private":
             continue
@@ -133,14 +143,14 @@ def cmd_apply(args):
     plan, counter = [], 0
     for r in rows:
         title = r["title"].strip()
-        if not title and not re.match(r"^IMG[ _]\d+", r["current_title"]):
+        if not title and not untitled(r["filename"], r["current_title"]):
             print(f"skip (already has its own title, leave 'title' blank to keep): {r['filename']}")
             continue
         if not title:
             counter += 1
             title = f"{args.prefix} #{counter}"
         stem = Path(r["filename"]).stem
-        desc = f"{stem}\n{args.line}"
+        desc = f"{stem}\n{args.line}" if args.line else stem
         if len(title) > 100:
             sys.exit(f"title too long (>100): {title}")
         plan.append((r["video_id"], r["filename"], title, desc))
@@ -197,25 +207,29 @@ def cmd_apply(args):
         print(f"ok  {fname}")
 
 
-HELP = """\
-yt_batch.py - batch-set titles, descriptions and visibility on your YouTube videos
+HELP = f"""\
+YT-Long {__version__} (yt_batch.py)
+Batch-set titles, descriptions and visibility on your YouTube videos.
 
 USAGE
   python yt_batch.py <command> [options]
 
 COMMANDS
-  export    List your private IMG_ videos and write titles.csv. Fill in its
+  export    List your private videos and write titles.csv. Fill in its
             'title' column; rows left blank become '<prefix> #N'. Titles you
             already typed are kept when you run export again.
   apply     Read titles.csv and update each video: title from the CSV,
-            description = original filename + the shared line. Videos already
-            done are skipped, so rerunning is safe.
+            description = original filename, plus --line on a second line.
+            Videos already done are skipped, so rerunning is safe.
   help, ?   Show this screen (also: no command, -h, --help).
+  version   Print the version (also: -V, --version).
 
 OPTIONS (export / apply)
-  --line TEXT         Shared description line        [default: w/ rian & wanda]
-  --prefix TEXT       Fallback title prefix          [default: Merbabu]
-  --pattern REGEX     Which original filenames to include   [default: ^IMG_]
+  --line TEXT         Text added to every description, under the filename
+                      [default: none]
+  --prefix TEXT       Title prefix for rows left blank       [default: Video]
+  --pattern REGEX     Only videos whose original filename matches. "^IMG_"
+                      means: filename starts with IMG_       [default: all]
   --any-visibility    Include videos that are not private
   --deep              Also search for drafts missing from the uploads list
                       (costs more API quota)
@@ -228,10 +242,10 @@ OPTIONS (apply only)
                       a draft; this is your declaration, not a default)
 
 EXAMPLES
-  python yt_batch.py export
-  python yt_batch.py apply --dry-run
-  python yt_batch.py apply --limit 1
-  python yt_batch.py apply --visibility public --not-for-kids
+  python yt_batch.py export --pattern "^IMG_"
+  python yt_batch.py apply --pattern "^IMG_" --line "Shot on my phone" --dry-run
+  python yt_batch.py apply --pattern "^IMG_" --line "Shot on my phone" --limit 1
+  python yt_batch.py apply --pattern "^IMG_" --visibility public --not-for-kids
 
 FILES (in this folder)
   titles.csv   your titles        done.json   log of finished videos
@@ -241,11 +255,12 @@ FILES (in this folder)
 
 def main():
     p = argparse.ArgumentParser(add_help=False)
-    p.add_argument("command", nargs="?", default="help", choices=["export", "apply", "help", "?"])
+    p.add_argument("command", nargs="?", default="help", choices=["export", "apply", "help", "?", "version"])
     p.add_argument("-h", "--help", dest="show_help", action="store_true")
-    p.add_argument("--line", default="w/ rian & wanda", help="shared description line")
-    p.add_argument("--prefix", default="Merbabu", help="fallback title prefix")
-    p.add_argument("--pattern", default=r"^IMG_", help="regex on original filename")
+    p.add_argument("-V", "--version", dest="show_version", action="store_true")
+    p.add_argument("--line", default="", help="shared description line")
+    p.add_argument("--prefix", default="Video", help="fallback title prefix")
+    p.add_argument("--pattern", default="", help="regex on original filename")
     p.add_argument("--any-visibility", action="store_true", help="include non-private videos")
     p.add_argument("--deep", action="store_true", help="also search for drafts missing from uploads list")
     p.add_argument("--visibility", choices=["public", "unlisted", "private"],
@@ -255,6 +270,9 @@ def main():
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--limit", type=int, default=0)
     args = p.parse_args()
+    if args.show_version or args.command == "version":
+        print(f"YT-Long {__version__}")
+        return
     if args.show_help or args.command in ("help", "?"):
         print(HELP)
         return
