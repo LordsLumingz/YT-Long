@@ -1,9 +1,19 @@
 # YT-Long
 
-**Version 0.2.5**
+**Version 0.3.7**
 
-Batch-set the title, description and visibility of videos you have already
-uploaded to YouTube, using the official YouTube Data API.
+Batch-set the title, description, visibility and playlist of videos you have
+already uploaded to YouTube, using the official YouTube Data API.
+
+New in 0.3.7:
+
+- `playlist` command and `apply --playlist`: list your playlists, add videos
+  to one, create it if it is missing.
+- `export --title-pattern`, `--in-playlist` and `--untitled`: pick videos by
+  their current title, by playlist, or only the ones not titled yet.
+- `apply` changes only what you ask for in that run, so the steps can be done
+  one at a time and in any order. `--force` redoes a change.
+- `titles.csv` has a `url` column, used when Excel damages a video id.
 
 ## What it does
 
@@ -209,9 +219,9 @@ Options for `apply`:
 | `--dry-run` | Print what would change, change nothing. |
 | `--force` | Redo the changes even if they look already done, for example after you changed something back in Studio. |
 | `--limit N` | Only update the first N pending videos. |
-| `--visibility V` | Also set visibility: `public`, `unlisted` or `private`. |
+| `--visibility V` | Set visibility on every row: `public`, `unlisted` or `private`. |
 | `--not-for-kids` | Declare the videos not made for kids. Needed to publish a draft. |
-| `--playlist NAME` | Also add the videos to this playlist. Created if no playlist has that name. |
+| `--playlist NAME` | Add every row to this playlist. Created if no playlist has that name. |
 | `--playlist-visibility V` | Visibility of a newly created playlist: `public`, `unlisted` or `private`. Default: `private`. |
 
 ## 5. What to double-check
@@ -221,19 +231,24 @@ Before `apply`:
 - **Run `--dry-run` first** and read every line. It shows the exact title and
   description each video will get.
 - **Row count.** `export` picks up every private video that matches
-  `--pattern`, not only the batch you just uploaded. Leave the `title` blank
-  on old videos you do not want touched, or delete those rows.
+  `--pattern`, not only the batch you just uploaded. Delete the rows of
+  videos you do not want touched: `--visibility`, `--not-for-kids` and
+  `--playlist` act on every row in the file, with or without a title.
 - **`--line` replaces the description, it does not append.** Whatever was in
   the description of those videos is overwritten with filename + your text.
+- **Type the `--line` text by hand.** Text copied from Windows file
+  properties (dates especially) carries invisible characters. They end up in
+  the description and show in the preview as `\u200e` or `\u200f`.
 - **Titles are at most 100 characters.** The tool stops if one is longer.
 - **Save `titles.csv` as CSV**, not `.xlsx`, and keep the header row.
 - **Excel and video ids.** Excel reads an id that starts with `-` or `=` as a
-  formula and shows `#NAME?`. Leave that cell alone (press Esc if you clicked
-  into it). The `url` column holds the same id, and the tool falls back to it
-  if the `video_id` cell gets damaged.
-
-- **Playlist name.** Run `playlist` first and check `playlist.csv`. A typo in `--playlist` creates a
-  new playlist instead of using the one you meant.
+  formula and saves it as `#NAME?`, even if you never click the cell. The
+  `url` column holds the same id and the tool uses it instead, so leave both
+  columns alone. A `titles.csv` made by a version before 0.3.7 has no `url`
+  column: retype that id with an apostrophe in front (`'-abc...`), or the
+  video is reported as "not found" and skipped.
+- **Playlist name.** Run `playlist` first and check `playlist.csv`. A typo in
+  `--playlist` creates a new playlist instead of using the one you meant.
 
 Before publishing:
 
@@ -248,7 +263,8 @@ After a run:
 - **Refresh Studio with Ctrl+F5.** The list view often shows old titles for a
   while.
 - **Quota.** Each update costs 50 units out of 10,000 per day, about 200
-  videos. Adding a video to a playlist costs another 50. If it runs out, the tool stops; run the same command the next day.
+  videos. Adding a video to a playlist costs another 50. If it runs out, the
+  tool stops; run the same command the next day.
 - **Login expiry.** While the Google app is in "Testing" mode the login lasts
   7 days. After that the browser login opens again.
 - **`Error 403: access_denied` at login** means the Google account is not

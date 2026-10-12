@@ -22,7 +22,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-__version__ = "0.2.5"
+__version__ = "0.3.7"
 
 HERE = Path(__file__).resolve().parent
 SCOPES = ["https://www.googleapis.com/auth/youtube.force-ssl"]
@@ -354,15 +354,33 @@ def cmd_apply(args):
 
 HELP = f"""\
 YT-Long {__version__} (yt_batch.py)
-Batch-set titles, descriptions and visibility on your YouTube videos.
+Batch-set titles, descriptions, visibility and playlist on videos you
+have already uploaded to YouTube.
 
 USAGE
   python yt_batch.py <command> [options]
 
+HOW TO USE
+  1. Upload your videos in YouTube Studio and leave them as drafts.
+  2. python yt_batch.py export --pattern "^IMG_"
+       writes titles.csv, one row per matching video.
+  3. Open titles.csv (Excel is fine), type your titles in the 'title'
+     column, save as CSV. Do not change the video_id or url columns.
+  4. python yt_batch.py apply --dry-run
+       shows what would change. Nothing is changed yet.
+  5. python yt_batch.py apply
+       sets the titles.
+  6. Any of these, whenever you want, in any order:
+       python yt_batch.py apply --line "Shot on my phone"
+       python yt_batch.py apply --visibility public --not-for-kids
+       python yt_batch.py apply --playlist "My trip"
+  Add --dry-run to any apply to preview it, --limit 1 to try one video.
+  To rename a video later: type the new title in titles.csv, run apply.
+
 COMMANDS
-  export    List your private videos and write titles.csv. Fill in its
-            'title' column; rows left blank become '<prefix> #N'. Titles you
-            already typed are kept when you run export again.
+  export    List your private videos and write titles.csv. It is rewritten
+            each time: titles you already typed are kept, rows for videos
+            that no longer match are dropped.
   apply     Update the videos listed in titles.csv. Each run changes only
             what you ask for in that run (a typed title, --line, --visibility,
             --not-for-kids, --playlist) and leaves the rest as it is, so you
@@ -391,34 +409,44 @@ OPTIONS (export only: which videos go into titles.csv)
 OPTIONS (apply only: it updates exactly the rows in titles.csv)
   (no option)         Set titles typed in titles.csv. A video nobody has
                       titled yet also gets '<prefix> #N' if its row is blank,
-                      and its filename as description.
+                      and its filename as description. A blank row whose
+                      video already has a title keeps title and description.
   --line TEXT         Rewrite the description: filename, then TEXT under it
   --prefix TEXT       Title prefix for rows left blank       [default: Video]
   --dry-run           Print what would change, change nothing
   --force             Redo the changes even if they look already done
   --limit N           Only update the first N videos (use 1 to test)
-  --visibility V      Also set visibility: public | unlisted | private
+  --visibility V      Set visibility on every row: public | unlisted | private
   --not-for-kids      Declare the videos NOT made for kids (needed to publish
                       a draft; this is your declaration, not a default)
-  --playlist NAME     Also add the videos to this playlist, in titles.csv
+  --playlist NAME     Add every row to this playlist, in titles.csv
                       order. Created if no playlist has that name. Videos
                       already in it are not added twice.
   --playlist-visibility V
                       Visibility of a newly created playlist: public |
                       unlisted | private                  [default: private]
 
-EXAMPLES
+MORE EXAMPLES
+  python yt_batch.py export --untitled
+  python yt_batch.py export --title-pattern "(?i)merbabu|lawu" --any-visibility
+  python yt_batch.py export --in-playlist "My trip" --any-visibility
   python yt_batch.py playlist
-  python yt_batch.py apply --playlist "My trip" --dry-run
-  python yt_batch.py export --pattern "^IMG_"
-  python yt_batch.py apply --line "Shot on my phone" --dry-run
-  python yt_batch.py apply --line "Shot on my phone" --limit 1
-  python yt_batch.py apply --line "Shot on my phone" --visibility public --not-for-kids
+  python yt_batch.py apply --prefix "Trip" --line "Shot on my phone" --limit 1
+
+WATCH OUT
+  - --visibility, --not-for-kids and --playlist act on every row of
+    titles.csv. Delete the rows you do not want touched.
+  - --line replaces the whole description, it does not append.
+  - Type the --line text by hand. Text copied from Windows file properties
+    carries invisible characters.
+  - Excel shows a video id starting with '-' as #NAME?. The url column
+    holds the same id and is used instead, so leave both columns alone.
 
 FILES (in this folder)
-  titles.csv   your titles        done.json   log of finished videos
-  playlist.csv your playlists
-  token.json   your login (keep private)
+  titles.csv    your video list and titles
+  playlist.csv  your playlists, written by 'playlist'
+  done.json     log of what the tool has set on each video
+  token.json    your login (keep private)
 """
 
 
