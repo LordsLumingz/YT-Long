@@ -4,6 +4,7 @@ client_secret*.json
 
 # local run state (your video IDs and titles)
 titles.csv
+playlist.csv
 done.json
 
 # python

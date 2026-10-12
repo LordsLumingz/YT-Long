@@ -20,6 +20,8 @@ drafts). This tool then fills in the boring part for all of them at once:
   ```
 
 - **Visibility** (optional): draft/private to public, unlisted or private.
+- **Playlist** (optional): add all of them to a playlist, creating it if it
+  does not exist yet.
 
 It does not upload videos. Uploads made through the API by an unverified app
 are locked to private by YouTube, so uploading stays in Studio.
@@ -31,7 +33,8 @@ Say your phone named three clips `IMG_3897.MOV`, `IMG_3898.MOV` and
 third blank, and run:
 
 ```bash
-python yt_batch.py apply --pattern "^IMG_" --prefix "Trip" --line "Shot on my phone"
+python yt_batch.py export --pattern "^IMG_"
+python yt_batch.py apply --prefix "Trip" --line "Shot on my phone"
 ```
 
 | File | Title you typed | Title on YouTube | Description on YouTube |
@@ -77,8 +80,8 @@ that owns the channel and allow access. The login is saved to `token.json`.
 
 ## 3. How to use
 
-Replace the `<...>` parts with your own values. Use the same `--pattern` on
-`export` and on every `apply`.
+Replace the `<...>` parts with your own values. `export` decides which videos
+go into `titles.csv`; `apply` then touches exactly the rows in that file.
 
 1. **Upload** your videos in YouTube Studio and leave them as drafts.
 
@@ -92,15 +95,21 @@ Replace the `<...>` parts with your own values. Use the same `--pattern` on
    filename starts with `<FILENAME PREFIX>`. Leave `--pattern` out to list
    every private video on the channel.
 
+   `export` rewrites `titles.csv` from scratch each time. Titles you typed
+   are kept for videos that are still in the list; rows for videos that no
+   longer match are dropped. Add `--untitled` to list only videos you have
+   not titled yet.
+
 3. **Type your titles** in the `title` column of `titles.csv` (Excel is fine)
-   and save. Do not change the `video_id` column.
+   and save. Do not change the `video_id` or `url` columns.
    - A row left blank gets an automatic title: `<YOUR TITLE PREFIX> #1`, ...
-   - A row left blank whose video already has a real title is skipped.
+   - A row left blank whose video already has a real title keeps its title
+     and description.
 
 4. **Preview**. Nothing is changed:
 
    ```bash
-   python yt_batch.py apply --pattern "^<FILENAME PREFIX>" --prefix "<YOUR TITLE PREFIX>" --line "<YOUR VIDEO DESCRIPTION>" --dry-run
+   python yt_batch.py apply --prefix "<YOUR TITLE PREFIX>" --line "<YOUR VIDEO DESCRIPTION>" --dry-run
    ```
 
 5. **Test on one video**: same command with `--limit 1` in place of
@@ -112,11 +121,44 @@ Replace the `<...>` parts with your own values. Use the same `--pattern` on
    and declare them not made for kids:
 
    ```bash
-   python yt_batch.py apply --pattern "^<FILENAME PREFIX>" --visibility public --not-for-kids
+   python yt_batch.py apply --prefix "<YOUR TITLE PREFIX>" --line "<YOUR VIDEO DESCRIPTION>" --visibility public --not-for-kids
    ```
 
-Running `apply` again is safe: finished videos are logged in `done.json` and
-skipped.
+8. **Put them in a playlist** (optional). See what you already have, then add:
+
+   ```bash
+   python yt_batch.py playlist
+   ```
+
+   This writes `playlist.csv`: playlist title, visibility, number of videos
+   and playlist id.
+
+   ```bash
+   python yt_batch.py apply --playlist "<YOUR PLAYLIST NAME>" --dry-run
+   ```
+
+   Drop `--dry-run` to do it. If no playlist has that name, a new private one
+   is created. Videos are added in `titles.csv` order, and a video already in
+   the playlist is not added again.
+
+You do not have to follow that order or put everything in one command. Each
+`apply` run changes only what you ask for in that run and leaves everything
+else on the video as it is:
+
+| You run | What changes |
+| --- | --- |
+| `apply` | Titles you typed in `titles.csv`. A video nobody has titled yet also gets `Video #N` if its row is blank, and its filename as description. |
+| `apply --line "text"` | The description: filename, then your text. Titles stay. |
+| `apply --prefix "Trip"` | The automatic titles become `Trip #N`. Typed titles stay. |
+| `apply --visibility public` | Only the visibility. |
+| `apply --not-for-kids` | Only the made-for-kids declaration. |
+| `apply --playlist "Name"` | Only the playlist. |
+
+So typing a new title in `titles.csv` later and running `apply` again renames
+just that video; its description, visibility and playlist are not touched.
+Rows are matched to videos by `video_id`, so the `current_title` column being
+out of date does not matter. Running the same command twice is safe: a change
+that is already in place is skipped.
 
 ## 4. Commands
 
@@ -124,16 +166,18 @@ skipped.
 | --- | --- |
 | `export` | List your videos and write `titles.csv`. Titles you already typed are kept when you export again. |
 | `apply` | Read `titles.csv` and update each video. |
+| `playlist` | Write your playlists to `playlist.csv`: title, visibility, number of videos, id. Same as `getplaylist`. |
 | `help` or `?` | Show all commands and options. Same as no command, `-h` or `--help`. |
 | `version` | Print the version. Same as `-V` or `--version`. |
 
-Options for `export` and `apply`:
+Options for `export` (which videos go into `titles.csv`):
 
 | Option | Default | What it does |
 | --- | --- | --- |
 | `--pattern REGEX` | all videos | Only include videos whose original filename matches. See the table below. |
-| `--line TEXT` | none | Your text, added to every description under the filename. |
-| `--prefix TEXT` | `Video` | Title prefix for rows left blank: `Video #1`, `Video #2`, ... |
+| `--title-pattern REGEX` | all videos | Only include videos whose **current YouTube title** matches. Studio turns `IMG_3897.MOV` into the title `IMG 3897`, so write `"^IMG "` with a space, not `"^IMG_"`. |
+| `--in-playlist NAME` | all videos | Only include videos that are in this playlist of yours. Run `playlist` to see the names. |
+| `--untitled` | off | Only include videos nobody has titled yet: the title is still the one YouTube made from the filename. |
 | `--any-visibility` | off | Include videos that are not private. |
 | `--deep` | off | Also search for drafts missing from the uploads list. Costs more quota. |
 
@@ -145,19 +189,30 @@ What to write for `--pattern` (keep the quotes):
 | Filenames that start with `VID` | `--pattern "^VID"` | `VID20260101.mp4` |
 | Filenames that end with `.MOV` | `--pattern "\.MOV$"` | `IMG_3897.MOV`, `clip.MOV` |
 | Filenames that contain `gopro` | `--pattern "gopro"` | `my_gopro_01.mp4` |
+| `Merbabu` **or** `Lawu` | `--title-pattern "Merbabu\|Lawu"` | either word |
+| `merbabu` in any capitalisation | `--title-pattern "(?i)merbabu"` | `Merbabu`, `merbabu`, `MERBABU` |
 | Everything | leave `--pattern` out | all your private videos |
 
-`^` means "starts with" and `$` means "ends with". The match is on the name
-the file had on your computer when you uploaded it, not on the YouTube title.
+`^` means "starts with", `$` means "ends with", `|` means "or", and `(?i)` at
+the front means "ignore upper/lower case". The same rules work in
+`--title-pattern`. The filters stack: a video must pass every one you give.
 
-Options for `apply` only:
+`--pattern` matches the name the file had on your computer when you uploaded
+it. `--title-pattern` matches the title the video has on YouTube now.
+
+Options for `apply`:
 
 | Option | What it does |
 | --- | --- |
+| `--line TEXT` | Rewrite the description: filename, then your text under it. Without it, descriptions the tool already set are left alone. |
+| `--prefix TEXT` | Title prefix for rows left blank: `Video #1`, `Video #2`, ... Default: `Video`. |
 | `--dry-run` | Print what would change, change nothing. |
+| `--force` | Redo the changes even if they look already done, for example after you changed something back in Studio. |
 | `--limit N` | Only update the first N pending videos. |
 | `--visibility V` | Also set visibility: `public`, `unlisted` or `private`. |
 | `--not-for-kids` | Declare the videos not made for kids. Needed to publish a draft. |
+| `--playlist NAME` | Also add the videos to this playlist. Created if no playlist has that name. |
+| `--playlist-visibility V` | Visibility of a newly created playlist: `public`, `unlisted` or `private`. Default: `private`. |
 
 ## 5. What to double-check
 
@@ -168,12 +223,17 @@ Before `apply`:
 - **Row count.** `export` picks up every private video that matches
   `--pattern`, not only the batch you just uploaded. Leave the `title` blank
   on old videos you do not want touched, or delete those rows.
-- **Descriptions are replaced, not appended.** Any description already on a
-  video in the list is overwritten.
+- **`--line` replaces the description, it does not append.** Whatever was in
+  the description of those videos is overwritten with filename + your text.
 - **Titles are at most 100 characters.** The tool stops if one is longer.
 - **Save `titles.csv` as CSV**, not `.xlsx`, and keep the header row.
-- **`--line` and `--prefix` are not remembered.** Pass them on every `apply`;
-  without `--line` the description is only the filename.
+- **Excel and video ids.** Excel reads an id that starts with `-` or `=` as a
+  formula and shows `#NAME?`. Leave that cell alone (press Esc if you clicked
+  into it). The `url` column holds the same id, and the tool falls back to it
+  if the `video_id` cell gets damaged.
+
+- **Playlist name.** Run `playlist` first and check `playlist.csv`. A typo in `--playlist` creates a
+  new playlist instead of using the one you meant.
 
 Before publishing:
 
@@ -188,7 +248,7 @@ After a run:
 - **Refresh Studio with Ctrl+F5.** The list view often shows old titles for a
   while.
 - **Quota.** Each update costs 50 units out of 10,000 per day, about 200
-  videos. If it runs out, the tool stops; run the same command the next day.
+  videos. Adding a video to a playlist costs another 50. If it runs out, the tool stops; run the same command the next day.
 - **Login expiry.** While the Google app is in "Testing" mode the login lasts
   7 days. After that the browser login opens again.
 - **`Error 403: access_denied` at login** means the Google account is not
@@ -202,7 +262,8 @@ After a run:
 | `install.bat` | Windows setup: Python and the modules. | yes |
 | `requirements.txt` | The Python modules the tool needs. | yes |
 | `titles.csv` | Your video list and titles. | no |
-| `done.json` | Log of finished videos. Delete an entry to redo that video. | no |
+| `playlist.csv` | Your playlists, written by `playlist`. | no |
+| `done.json` | Log of what the tool has set on each video. Use `--force` to redo. | no |
 | `token.json` | Your saved login. Treat it like a password. | no |
 | `client_secret_*.json` | Your Google OAuth client. Treat it like a password. | no |
 
